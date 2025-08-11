@@ -1,0 +1,1 @@
+// Minimal editor header placeholder
