@@ -2,12 +2,13 @@ name: Build (macOS AU+VST3)
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ main, master ]
 
 jobs:
   macos:
     runs-on: macos-latest
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      MACOSX_DEPLOYMENT_TARGET: 11.0
 
     steps:
       - name: Checkout
@@ -18,51 +19,49 @@ jobs:
 
       - name: Tooling
         run: |
-          brew update
           brew install cmake ninja
 
-      - name: Configure (CMake + Ninja, Universal)
+      - name: Configure (CMake + Ninja, arm64 only)
         run: |
           cmake -S . -B build -G "Ninja" \
-            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+            -DCMAKE_OSX_ARCHITECTURES="arm64" \
+            -DCMAKE_BUILD_TYPE=Release
 
-      - name: Build (Release)
-        run: cmake --build build --config Release -- -v
-
-      # JUCE puts binaries under build/HappyAccident_artefacts/Release/<Format>/
-      - name: Locate build outputs
-        id: locate
+      - name: Build (Release, show errors)
         run: |
-          VST3=$(find build -type d -name "VST3" -maxdepth 5 | head -n1)
-          AU=$(find build -type d -name "AU" -maxdepth 5 | head -n1)
-          echo "VST3_DIR=$VST3" >> $GITHUB_ENV
-          echo "AU_DIR=$AU" >> $GITHUB_ENV
-          echo "Found VST3 dir: $VST3"
-          echo "Found AU dir:   $AU"
-          test -d "$VST3" && test -d "$AU"
+          set -eo pipefail
+          cmake --build build --config Release -- -v 2>&1 | tee build.log
+
+      # JUCE puts binaries here: build/HappyAccident_artefacts/Release/<Format>/
+      - name: Locate build outputs
+        run: |
+          VST3_DIR=$(find build -type d -name VST3 -path "*/Release/*" | head -n1)
+          AU_DIR=$(find build -type d -name AU -path "*/Release/*" | head -n1)
+          echo "VST3_DIR=$VST3_DIR" >> $GITHUB_ENV
+          echo "AU_DIR=$AU_DIR" >> $GITHUB_ENV
+          echo "Found VST3: $VST3_DIR"
+          echo "Found AU:   $AU_DIR"
+          test -d "$VST3_DIR" && test -d "$AU_DIR"
 
       - name: Package unsigned .pkg
         run: |
           rm -rf pkgroot
           mkdir -p "pkgroot/Library/Audio/Plug-Ins/VST3" \
                    "pkgroot/Library/Audio/Plug-Ins/Components"
-          cp "$VST3_DIR/HappyAccident.vst3"        "pkgroot/Library/Audio/Plug-Ins/VST3/"
-          cp "$AU_DIR/HappyAccident.component"     "pkgroot/Library/Audio/Plug-Ins/Components/"
-          pkgbuild \
-            --root pkgroot \
-            --identifier com.happyapps.happyaccident \
-            --version 0.1.0 \
-            --install-location / \
-            HappyAccident.pkg
+          cp "$VST3_DIR/HappyAccident.vst3"    "pkgroot/Library/Audio/Plug-Ins/VST3/"
+          cp "$AU_DIR/HappyAccident.component" "pkgroot/Library/Audio/Plug-Ins/Components/"
+          pkgbuild --root pkgroot \
+                   --identifier com.happyapps.happyaccident \
+                   --version 0.1.0 \
+                   --install-location / \
+                   HappyAccident.pkg
 
-      - name: Upload artifacts (AU/VST3 + .pkg)
+      - name: Upload artifacts (AU/VST3 + .pkg + log)
         uses: actions/upload-artifact@v4
         with:
           name: HappyAccident-macOS
           path: |
             ${{ env.VST3_DIR }}/HappyAccident.vst3
-            ${{
-              env.AU_DIR
-            }}/HappyAccident.component
+            ${{ env.AU_DIR }}/HappyAccident.component
             HappyAccident.pkg
+            build.log
