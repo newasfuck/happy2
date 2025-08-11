@@ -1,0 +1,68 @@
+name: Build (macOS AU+VST3)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch JUCE (no submodule needed)
+        run: git clone --depth=1 https://github.com/juce-framework/JUCE.git juce
+
+      - name: Tooling
+        run: |
+          brew update
+          brew install cmake ninja
+
+      - name: Configure (CMake + Ninja, Universal)
+        run: |
+          cmake -S . -B build -G "Ninja" \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+
+      - name: Build (Release)
+        run: cmake --build build --config Release -- -v
+
+      # JUCE puts binaries under build/HappyAccident_artefacts/Release/<Format>/
+      - name: Locate build outputs
+        id: locate
+        run: |
+          VST3=$(find build -type d -name "VST3" -maxdepth 5 | head -n1)
+          AU=$(find build -type d -name "AU" -maxdepth 5 | head -n1)
+          echo "VST3_DIR=$VST3" >> $GITHUB_ENV
+          echo "AU_DIR=$AU" >> $GITHUB_ENV
+          echo "Found VST3 dir: $VST3"
+          echo "Found AU dir:   $AU"
+          test -d "$VST3" && test -d "$AU"
+
+      - name: Package unsigned .pkg
+        run: |
+          rm -rf pkgroot
+          mkdir -p "pkgroot/Library/Audio/Plug-Ins/VST3" \
+                   "pkgroot/Library/Audio/Plug-Ins/Components"
+          cp "$VST3_DIR/HappyAccident.vst3"        "pkgroot/Library/Audio/Plug-Ins/VST3/"
+          cp "$AU_DIR/HappyAccident.component"     "pkgroot/Library/Audio/Plug-Ins/Components/"
+          pkgbuild \
+            --root pkgroot \
+            --identifier com.happyapps.happyaccident \
+            --version 0.1.0 \
+            --install-location / \
+            HappyAccident.pkg
+
+      - name: Upload artifacts (AU/VST3 + .pkg)
+        uses: actions/upload-artifact@v4
+        with:
+          name: HappyAccident-macOS
+          path: |
+            ${{ env.VST3_DIR }}/HappyAccident.vst3
+            ${{
+              env.AU_DIR
+            }}/HappyAccident.component
+            HappyAccident.pkg
