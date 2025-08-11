@@ -20,7 +20,6 @@ target_sources(HappyAccident PRIVATE
     Source/PluginProcessor.h
     Source/PluginEditor.cpp
     Source/PluginEditor.h
-    Source/PluginEntry.cpp
 )
 
 target_compile_definitions(HappyAccident PRIVATE
