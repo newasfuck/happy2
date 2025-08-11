@@ -21,13 +21,14 @@ jobs:
         run: |
           brew install cmake ninja
 
-      - name: Configure (CMake + Ninja, arm64 only)
+      - name: Configure (fresh)
         run: |
+          rm -rf build
           cmake -S . -B build -G "Ninja" \
-            -DCMAKE_OSX_ARCHITECTURES="arm64" \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_BUILD_TYPE=Release
 
-      - name: Build (Release, show errors)
+      - name: Build (verbose, capture log)
         run: |
           set -eo pipefail
           cmake --build build --config Release -- -v 2>&1 | tee build.log
